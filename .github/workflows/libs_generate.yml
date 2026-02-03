@@ -1,14 +1,7 @@
 name: Build VPN Libraries
 
 on:
-  workflow_call: {}
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Tag for new library release'
-        required: false
-        default: ''
-        type: string
+  workflow_call:
 
 jobs:
   build_desktop_libs:
