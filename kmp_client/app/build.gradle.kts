@@ -1,3 +1,4 @@
+import org.gradle.kotlin.dsl.implementation
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -10,7 +11,7 @@ plugins {
     alias(libs.plugins.hydraulic.conveyor)
 
     id("com.github.gmazzo.buildconfig") version "5.6.5"
-    id("io.sentry.kotlin.multiplatform.gradle") version "0.18.0"
+    id("io.sentry.kotlin.multiplatform.gradle") version "0.18.0" apply false
 }
 
 version = "1.0"
@@ -19,6 +20,12 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
     }
+}
+
+// Keep it enabled by default (CI/release), but allow disabling for local Xcode builds via: -PdisableSentry=true
+val disableSentry = providers.gradleProperty("disableSentry").orNull?.lowercase() in setOf("1", "true", "yes")
+if (!disableSentry) {
+    apply(plugin = "io.sentry.kotlin.multiplatform.gradle")
 }
 
 kotlin {
@@ -88,6 +95,9 @@ kotlin {
         }
 
         jvmMain.dependencies {
+            implementation(project(":grpcstub"))
+            runtimeOnly(libs.grpc.netty)
+
             implementation(compose.desktop.currentOs)
             implementation(libs.skiko.win)
             implementation(libs.skiko.mac.amd64)
@@ -203,6 +213,7 @@ buildConfig {
 
 
 dependencies {
+    implementation(project(":grpcstub"))
     implementation(project(":awg"))
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

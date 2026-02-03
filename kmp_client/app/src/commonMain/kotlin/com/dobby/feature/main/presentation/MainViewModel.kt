@@ -1,31 +1,25 @@
 package com.dobby.feature.main.presentation
 
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dobby.feature.diagnostic.domain.HealthCheck
 import com.dobby.feature.diagnostic.domain.HealthCheckManager
 import com.dobby.feature.logging.Logger
 import com.dobby.feature.logging.domain.maskStr
-import com.dobby.feature.main.domain.AwgManager
-import com.dobby.feature.main.domain.VpnManager
-import com.dobby.feature.main.domain.ConnectionStateRepository
-import com.dobby.feature.main.domain.DobbyConfigsRepository
-import com.dobby.feature.main.domain.PermissionEventsChannel
-import com.dobby.feature.main.domain.TomlConfigs
+import com.dobby.feature.main.domain.*
+import com.dobby.feature.main.domain.config.TomlConfigApplier
 import com.dobby.feature.main.ui.MainUiState
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
+import com.dobby.vpn.BuildConfig
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import net.peanuuutz.tomlkt.Toml
-import net.peanuuutz.tomlkt.decodeFromString
-import com.dobby.vpn.BuildConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 val httpClient = HttpClient()
 
@@ -34,13 +28,22 @@ class MainViewModel(
     val connectionStateRepository: ConnectionStateRepository,
     private val permissionEventsChannel: PermissionEventsChannel,
     private val vpnManager: VpnManager,
-    private val awgManager: AwgManager,
     private val logger: Logger,
     healthCheck: HealthCheck,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState
+    //endregion
+
+    private val tomlConfigApplier = TomlConfigApplier(
+        outlineRepo = configsRepository,
+        cloakRepo = configsRepository,
+        logger = logger
+    )
+
     private val healthCheckManager: HealthCheckManager = HealthCheckManager(healthCheck, this, configsRepository, logger)
+    private var serverAddress: String? = null
+    private var serverPort: Int? = null
 
     init {
         viewModelScope.launch {
@@ -71,6 +74,14 @@ class MainViewModel(
         }
     }
 
+    fun onConnectionUrlChanged(connectionUrl: String) {
+        _uiState.value = _uiState.value.copy(connectionURL = connectionUrl)
+
+        viewModelScope.launch(Dispatchers.Default) {
+            configsRepository.setConnectionURL(connectionUrl)
+        }
+    }
+
     //region Cloak functions
     fun onConnectionButtonClicked(
         connectionUrl: String
@@ -82,12 +93,18 @@ class MainViewModel(
             return
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.Default) {
             logger.log("Proceeding with setConfig for the provided URL...")
             if (!connectionStateRepository.vpnStartedFlow.value) {
                 try {
                     logger.log("We get config by ${maskStr(connectionUrl)}")
-                    setConfig(connectionUrl)
+                    val ok = setConfig(connectionUrl)
+                    if (!ok) {
+                        logger.log("Config is invalid or failed to apply → abort start (no HC/VPN)")
+                        connectionStateRepository.updateVpnStarted(false)
+                        connectionStateRepository.updateStatus(false)
+                        return@launch
+                    }
                 } catch (e: Exception) {
                     logger.log("Error during setConfig: ${e.message}")
                     return@launch
@@ -124,7 +141,7 @@ class MainViewModel(
         }
     }
 
-    private suspend fun setConfig(connectionUrl: String) {
+    private suspend fun setConfig(connectionUrl: String): Boolean {
         logger.log("Start setConfig() with connectionUrl: ${maskStr(connectionUrl)}")
 
         configsRepository.setConnectionURL(connectionUrl)
@@ -136,56 +153,20 @@ class MainViewModel(
         configsRepository.setConnectionConfig(connectionConfig)
         logger.log("Connection config saved to repository")
 
-        try {
-            parseToml(connectionConfig)
-        } catch (e: Exception) {
-            val errorMsg = "Error during parsing TOML: ${e.message}"
-            logger.log(errorMsg)
-            throw RuntimeException(errorMsg)
-        }
-    }
+        val applied = runCatching { tomlConfigApplier.apply(connectionConfig) }
+            .onFailure { e ->
+                logger.log("Error during parsing TOML: ${e.message}")
+                configsRepository.clearOutlineAndCloakConfig()
+            }
+            .getOrDefault(false)
 
-    private fun parseToml(connectionConfig: String) {
-        logger.log("Start parseToml()")
-
-        if (connectionConfig.isBlank()) {
-            logger.log("Connection config is blank, skipping parseToml()")
-            return
+        if (!applied) {
+            logger.log("Config not applied (invalid/unsupported) → will not start VPN/HC")
+            return false
         }
 
-        val root = Toml.decodeFromString<TomlConfigs>(connectionConfig)
-        val ss = root.Shadowsocks?.Direct ?: root.Shadowsocks?.Local
-
-        if (ss != null) {
-            logger.log("Detected Shadowsocks config, applying Outline parameters")
-            configsRepository.setIsOutlineEnabled(true)
-            configsRepository.setMethodPasswordOutline("${ss.Method}:${ss.Password}")
-            val outlineSuffix = if (ss.Outline == true) "/?outline=1" else ""
-            configsRepository.setServerPortOutline("${ss.Server}:${ss.Port}$outlineSuffix")
-            logger.log("Outline method, password, and server: ${ss.Method}:${maskStr(ss.Password)}@${maskStr(ss.Server)}:${ss.Port}")
-        } else {
-            logger.log("Shadowsocks config didn't detected, turn off")
-            configsRepository.setIsOutlineEnabled(false)
-        }
-
-        if (root.Cloak != null) {
-            logger.log("Detected Cloak config, enabling Cloak mode")
-            configsRepository.setIsCloakEnabled(true)
-            val cloakJson = Json { prettyPrint = true }.encodeToString(root.Cloak)
-            configsRepository.setCloakConfig(cloakJson)
-            root.Cloak.UID = maskStr(root.Cloak.UID)
-            root.Cloak.RemoteHost = maskStr(root.Cloak.RemoteHost)
-            root.Cloak.ServerName = maskStr(root.Cloak.ServerName)
-            root.Cloak.CDNOriginHost = root.Cloak.CDNOriginHost?.let { maskStr(it) }
-            root.Cloak.CDNWsUrlPath = root.Cloak.CDNWsUrlPath?.let { maskStr(it) }
-            val cloakJsonForLog = Json { prettyPrint = true }.encodeToString(root.Cloak)
-            logger.log("Cloak config saved successfully (config=${cloakJsonForLog})")
-        } else {
-            logger.log("Cloak config didn't detected, turn off")
-            configsRepository.setIsCloakEnabled(false)
-        }
-
-        logger.log("Finish parseToml()")
+        updateServerTargetFromConfig()
+        return true
     }
 
     private suspend fun getConfigByURL(connectionUrl: String): String {
@@ -210,31 +191,77 @@ class MainViewModel(
         }
     }
 
-    private fun startVpn(isPermissionGranted: Boolean) {
+    private suspend fun startVpn(isPermissionGranted: Boolean) {
         if (isPermissionGranted) {
             logger.log("Permission granted — starting VPN service")
             startVpnService()
         } else {
             logger.log("Permission denied — skipping VPN start")
+            connectionStateRepository.tryUpdateVpnStarted(false)
             // TODO: show Toast/snackbar
         }
     }
 
-    fun startVpnService() {
+    suspend fun startVpnService() {
         logger.log("Starting VPN service...")
+        val address = serverAddress
+        val port = serverPort
+        if (address == null || port == null) {
+            if (!updateServerTargetFromConfig()) {
+                logger.log("Server address/port is not set → skipping health check start")
+                vpnManager.start()
+                return
+            }
+        }
+        withContext(Dispatchers.Default) {
+            healthCheckManager.startHealthCheck(serverAddress!!, serverPort!!)
+        }
         vpnManager.start()
-        healthCheckManager.startHealthCheck()
     }
 
     fun stopVpnService(stoppedByHealthCheck: Boolean = false) {
         logger.log("Stopping VPN service...")
         vpnManager.stop()
         if (!stoppedByHealthCheck) {
-            configsRepository.setIsOutlineEnabled(false)
-            configsRepository.setIsCloakEnabled(false)
+            configsRepository.clearOutlineAndCloakConfig()
+            connectionStateRepository.tryUpdateStatus(false)
         }
         logger.log("VPN service stopped successfully, state reset to disconnected")
     }
+
+    private fun updateServerTargetFromConfig(): Boolean {
+        val serverPortOutline = configsRepository.getServerPortOutline()
+        val parsed = parseHostPort(serverPortOutline)
+        return if (parsed == null) {
+            logger.log("Failed to parse server address/port from Outline config: ${maskStr(serverPortOutline)}")
+            serverAddress = null
+            serverPort = null
+            false
+        } else {
+            serverAddress = parsed.first
+            serverPort = parsed.second
+            logger.log("Server target resolved: ${maskStr(serverAddress ?: "")}:$serverPort")
+            true
+        }
+    }
+
+    private fun parseHostPort(hostPortMaybeWithQuery: String): Pair<String, Int>? {
+        val hostPort = hostPortMaybeWithQuery.substringBefore("?").trim()
+        if (hostPort.isBlank()) return null
+
+        return if (hostPort.startsWith("[")) {
+            val host = hostPort.substringAfter("[").substringBefore("]")
+            val portStr = hostPort.substringAfter("]:", "")
+            val port = portStr.toIntOrNull() ?: return null
+            host to port
+        } else {
+            val lastColon = hostPort.lastIndexOf(':')
+            if (lastColon <= 0) return null
+            val host = hostPort.substring(0, lastColon)
+            val portStr = hostPort.substring(lastColon + 1)
+            val port = portStr.toIntOrNull() ?: return null
+            host to port
+        }
+    }
     //endregion
 }
-
