@@ -2,13 +2,6 @@ name: Build desktop installers
 
 on:
   workflow_call: {}
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Tag for new library release'
-        required: false
-        default: ''
-        type: string
 
 jobs:
   build_desktop_installers:
