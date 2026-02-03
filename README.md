@@ -1,4 +1,4 @@
-# DoBBYVPN - do Better By VPN
+# DobbyVPN - do Better By VPN
 
 Yet another VPN client. Currently wraps around OutlineSDK & cloak.
 
