@@ -11,16 +11,6 @@ jobs:
     uses: ./.github/workflows/libs_generate.yml
     secrets: inherit
 
-  android_build:
-    needs: libs_build
-    uses: ./.github/workflows/android_build.yml
-    secrets: inherit
-
-  ios_build:
-    needs: libs_build
-    uses: ./.github/workflows/ios_build.yml
-    secrets: inherit
-
   desktop_build:
     needs: libs_build
     uses: ./.github/workflows/desktop_build.yml
@@ -34,7 +24,7 @@ jobs:
   release:
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    needs: [installers_build, android_build, ios_build]
+    needs: [installers_build]
     permissions: write-all
     env:
       APP_MAJOR_VERSION: ${{ vars.MAJOR }}
