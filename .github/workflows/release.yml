@@ -73,18 +73,6 @@ jobs:
           name: dobbyVPN-macos-aarch64.pkg
           path: release
 
-      - name: Download Android client (signed)
-        uses: actions/download-artifact@v4
-        with:
-          name: dobbyvpn-android-sign.apk
-          path: release
-
-      - name: Download Android client (unsigned)
-        uses: actions/download-artifact@v4
-        with:
-          name: dobbyvpn-android-unsign.apk
-          path: release
-
       - name: Create version file for F-Droid
         run: |
           VERSION_NAME="${APP_MAJOR_VERSION}.${APP_MINOR_VERSION}.${APP_MAINTENANCE_VERSION}"
