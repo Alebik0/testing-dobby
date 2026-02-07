@@ -18,19 +18,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: windows_grpcvpnserver.exe
-          path: kmp_client/services
-
-      - name: Download Linux gRPC vpn service
-        uses: actions/download-artifact@v4
-        with:
-          name: ubuntu_grpcvpnserver
-          path: kmp_client/services
+          path: installer/windows/
 
       - name: Download macOS gRPC vpn service
         uses: actions/download-artifact@v4
         with:
           name: macos_grpcvpnserver
-          path: kmp_client/services
+          path: installer/macos/
 
       - name: Download Windows built application
         uses: actions/download-artifact@v4
