@@ -95,12 +95,6 @@ jobs:
           echo "[+] Building"
           sh build.sh
 
-      - name: Upload Linux installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: dobbyVPN-linux.deb
-          path: installer/linux/dobbyVPN-linux.deb
-
       - name: Upload Windows x86 installer
         uses: actions/upload-artifact@v4
         with:
