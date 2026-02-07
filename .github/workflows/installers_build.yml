@@ -69,9 +69,7 @@ jobs:
         if: matrix.os == 'windows'
         working-directory: installer/windows
         run: |
-          echo "[+] Displaying directory:"
-          du -ah output | sort -rh
-          echo "[+] Building"
+          ls
           ./build.bat
         env:
           APP_MAJOR_VERSION: ${{ vars.MAJOR }}
@@ -90,9 +88,7 @@ jobs:
         if: matrix.os == 'macos'
         working-directory: installer/macos/
         run: |
-          echo "[+] Displaying directory:"
-          du -ah output | sort -rh
-          echo "[+] Building"
+          ls
           sh build.sh
 
       - name: Upload Windows x86 installer
