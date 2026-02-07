@@ -31,7 +31,7 @@ jobs:
       - name: Download Windows gRPC vpn service
         uses: actions/download-artifact@v4
         with:
-          name: windows_grpcvpnserver
+          name: windows_grpcvpnserver.exe
           path: kmp_client/services
 
       - name: Download Linux gRPC vpn service

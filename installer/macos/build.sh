@@ -21,9 +21,9 @@ echo [+] Inserting vpnservice.plist file
 mkdir Scripts
 cp vpnservice.plist "bin/aarch64/Dobby Vpn.app/Contents/Resources/"
 
-echo [+] Inserting grpcvpnserver file
+echo [+] Inserting macos_grpcvpnserver file
 mkdir Scripts
-cp grpcvpnserver "bin/aarch64/Dobby Vpn.app/Contents/Resources/"
+cp macos_grpcvpnserver "bin/aarch64/Dobby Vpn.app/Contents/Resources/"
 
 echo [+] Building aarch64 PGK installer
 pkgbuild --root Payload \
