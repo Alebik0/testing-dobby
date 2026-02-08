@@ -1,7 +1,5 @@
 package com.dobby.feature.main.presentation
 
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dobby.feature.diagnostic.domain.HealthCheck
@@ -38,6 +36,7 @@ class MainViewModel(
     private val tomlConfigApplier = TomlConfigApplier(
         outlineRepo = configsRepository,
         cloakRepo = configsRepository,
+        awgRepo = configsRepository,
         logger = logger
     )
 
